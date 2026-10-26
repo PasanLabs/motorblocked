@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Dynamometer Simulator V3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Custom Sliders */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #ffffff; cursor: pointer; margin-top: -5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            border: 2px solid currentColor;
+        }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; cursor: pointer; border-radius: 3px; background: #e2e8f0; }
+        .slider-blue::-webkit-slider-thumb { border-color: #3b82f6; }
+        .slider-blue::-webkit-slider-runnable-track { background: linear-gradient(to right, #3b82f6, #93c5fd); }
+        .slider-orange::-webkit-slider-thumb { border-color: #f97316; }
+        .slider-orange::-webkit-slider-runnable-track { background: linear-gradient(to right, #f97316, #fdba74); }
+
+        .transition-all { transition: all 0.3s ease; }
+        .glass-overlay { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(4px); }
+
+        /* --- 2D Visual Animations --- */
+        @keyframes spinShaft {
+            from { background-position: 0 0; }
+            to { background-position: -40px 0; }
+        }
+        .shaft-pattern {
+            background: repeating-linear-gradient(90deg, #94a3b8, #94a3b8 10px, #cbd5e1 10px, #cbd5e1 20px);
+            animation: spinShaft linear infinite;
+            animation-play-state: paused;
+        }
+
+        @keyframes vibrate {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(-1px, 1px); }
+            50% { transform: translate(1px, -1px); }
+            75% { transform: translate(-1px, -1px); }
+            100% { transform: translate(1px, 1px); }
+        }
+        .engine-vibrate { animation: vibrate 0.1s linear infinite; }
+
+        @keyframes faultFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-fault { animation: faultFlash 0.5s infinite; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 p-4 sm:p-6 lg:p-8">
+
+    <!-- Header -->
+    <header class="max-w-7xl mx-auto mb-6 border-b border-slate-200 pb-4">
+        <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Dynamometer <span class="text-blue-600">Simulator V3</span></h1>
+        <p class="text-sm text-slate-500 mt-1">Interactive Engine Testing & Inverter Logic (Includes Dyno Startup Resistance)</p>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- LEFT COLUMN: Parameters & Controls (Span 5) -->
+        <div class="lg:col-span-5 flex flex-col gap-4">
+            
+            <!-- Parameters Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
+                <div class="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                    <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">
+                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        Inverter Parameters
+                    </h2>
+                </div>
+
+                <div class="p-4 space-y-3 relative">
+                    <!-- Filter Overlay -->
+                    <div id="filterOverlay" class="absolute inset-0 glass-overlay z-20 hidden flex-col items-center justify-center p-4 text-center">
+                        <h3 class="font-bold text-slate-800 text-sm">Filter Active</h3>
+                        <p class="text-[10px] text-slate-500 mb-3">P0004 is not 0.</p>
+                        <button onclick="document.getElementById('inpP0004').value=0; checkUIParams();" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded shadow">Reset P0004</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">P0003 (Access Level)</label>
+                            <select id="inpP0003" class="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs">
+                                <option value="1">1: Standard</option>
+                                <option value="2">2: Extended</option>
+                                <option value="3">3: Expert</option>
+                                <option value="4" selected>4: Service</option>
+                            </select>
+                        </div>
+                        <div class="relative z-30">
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">P0004 (Filter)</label>
+                            <input type="number" id="inpP0004" value="0" class="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">P0010 (Commissioning)</label>
+                            <input type="number" id="inpP0010" value="0" class="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Dyno Cap. (kW)</label>
+                            <input type="number" id="inpDynoKw" value="100" class="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono">
+                        </div>
+
+                        <div class="col-span-2 border-t border-slate-100 my-0.5"></div>
+
+                        <div><label class="block text-[10px] text-slate-500">P1080 (Min RPM)</label><input type="number" id="inpP1080" value="0" class="w-full border rounded p-1 text-xs font-mono"></div>
+                        <div><label class="block text-[10px] text-slate-500">P1082 (Max RPM)</label><input type="number" id="inpP1082" value="3000" class="w-full border rounded p-1 text-xs font-mono"></div>
+                        <div><label class="block text-[10px] text-slate-500">P1120 (Ramp-Up s)</label><input type="number" id="inpP1120" value="5" class="w-full border rounded p-1 text-xs font-mono"></div>
+                        <div><label class="block text-[10px] text-slate-500">P1121 (Ramp-Dn s)</label><input type="number" id="inpP1121" value="5" class="w-full border rounded p-1 text-xs font-mono"></div>
+
+                        <!-- Advanced Protection (Level 3+) -->
+                        <div id="advParams" class="col-span-2 grid grid-cols-2 gap-3 mt-1 transition-all">
+                            <div>
+                                <label class="block text-[10px] font-bold text-amber-600 mb-0.5">P1520 (Torque Limit Nm)</label>
+                                <input type="number" id="inpP1520" value="300" class="w-full bg-amber-50 border border-amber-200 rounded p-1 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-rose-600 mb-0.5">P2175 (Motor Block RPM)</label>
+                                <input type="number" id="inpP2175" value="300" class="w-full bg-rose-50 border border-rose-200 rounded p-1 text-xs font-mono">
+                            </div>
+                        </div>
+                        <div id="advHiddenMsg" class="col-span-2 hidden bg-slate-100 rounded p-2 text-center border border-slate-200">
+                            <p class="text-[10px] text-slate-500">P1520 & P2175 hidden. Set P0003 &ge; 3.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <div class="space-y-5">
+                    
+                    <!-- Engine Static Resistance -->
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <label class="text-xs font-bold text-slate-700 uppercase tracking-wider">Engine Static Resistance</label>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="inpStaticRes" value="320" class="w-16 bg-slate-100 border border-slate-300 rounded p-1 text-xs font-mono text-center focus:ring focus:ring-blue-100 outline-none">
+                            <span class="text-[10px] font-bold text-slate-500">Nm</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="text-xs font-semibold text-slate-700">Inverter Target Speed</label>
+                            <span class="font-mono text-blue-600 text-sm font-bold"><span id="valTargetRpm">1500</span> RPM</span>
+                        </div>
+                        <input type="range" id="sliderTarget" min="0" max="3000" value="1500" class="slider-blue">
+                    </div>
+                    
+                    <div>
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="text-xs font-semibold text-slate-700">Engine Throttle (Load)</label>
+                            <span class="font-mono text-orange-500 text-sm font-bold"><span id="valThrottle">0</span> %</span>
+                        </div>
+                        <input type="range" id="sliderThrottle" min="0" max="100" value="0" class="slider-orange">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN: Visuals & Monitor (Span 7) -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+            
+            <!-- 2D Visual Diagram Card -->
+            <div class="bg-slate-900 rounded-xl shadow-sm border border-slate-800 p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[180px]">
+                <h3 class="absolute top-2 left-3 text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Live Test Cell</h3>
+                
+                <!-- Dyno Startup Res Indicator -->
+                <div id="visDynoLoadMsg" class="absolute top-2 right-3 text-[10px] text-amber-400 font-mono hidden animate-pulse">
+                    + <span id="valStartupLoad">0</span>Nm Startup Load (10s)
+                </div>
+
+                <div class="flex items-center justify-between w-full max-w-lg mt-4">
+                    <!-- Engine -->
+                    <div id="visEngine" class="relative z-10 w-24 h-24 bg-slate-700 border-2 border-slate-500 rounded-lg shadow-lg flex flex-col items-center justify-center transition-all">
+                        <div class="text-xs font-bold text-slate-300">ENGINE</div>
+                        <div id="visEngineHeat" class="absolute inset-0 rounded-lg bg-orange-500 opacity-0 transition-opacity duration-300 mix-blend-overlay"></div>
+                    </div>
+
+                    <!-- Shaft -->
+                    <div class="flex-1 h-4 relative flex items-center">
+                        <div class="w-2 h-8 bg-slate-500 absolute left-0 rounded z-20"></div>
+                        <div id="visShaft" class="w-full h-full shaft-pattern shadow-inner border-y border-slate-700"></div>
+                        <div class="w-2 h-8 bg-slate-500 absolute right-0 rounded z-20"></div>
+                    </div>
+
+                    <!-- Dynamometer -->
+                    <div id="visDyno" class="relative z-10 w-24 h-28 bg-blue-900 border-2 border-blue-600 rounded-lg shadow-lg flex flex-col items-center justify-center transition-all">
+                        <div class="text-xs font-bold text-blue-200">DYNO</div>
+                        <div class="text-[9px] text-blue-400 mt-1">INVERTER</div>
+                        <div id="visLimitWarn" class="absolute -top-3 bg-red-500 text-white text-[8px] px-1.5 py-0.5 rounded animate-pulse hidden">LIMIT</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compact Monitor & Actions -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                
+                <!-- Status Row -->
+                <div class="bg-slate-800 px-4 py-3 flex items-center justify-between text-white">
+                    <div class="flex items-center gap-3">
+                        <div id="dispState" class="text-xl font-bold tracking-wider text-slate-300">READY</div>
+                        <div id="dispMsg" class="text-xs font-mono text-slate-400 hidden sm:block">Waiting for Start.</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="btnStart" class="bg-green-500 hover:bg-green-600 text-white font-bold py-1.5 px-4 rounded shadow text-sm transition-all">START</button>
+                        <button id="btnStop" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-1.5 px-4 rounded shadow text-sm transition-all">STOP</button>
+                    </div>
+                </div>
+
+                <!-- Compact Readouts -->
+                <div class="grid grid-cols-4 divide-x divide-slate-100 bg-slate-50">
+                    <div class="p-3 flex flex-col items-center">
+                        <div class="text-[9px] text-slate-500 uppercase font-semibold">RPM</div>
+                        <div id="dispRpm" class="text-xl sm:text-2xl font-mono font-bold text-blue-600 mt-1">0</div>
+                    </div>
+                    <div class="p-3 flex flex-col items-center relative">
+                        <div class="text-[9px] text-slate-500 uppercase font-semibold">Torque (Nm)</div>
+                        <div id="dispTorque" class="text-xl sm:text-2xl font-mono font-bold text-slate-800 mt-1">0.0</div>
+                        <div id="badgeLimit" class="absolute top-1 right-1 bg-red-500 text-white text-[8px] font-bold px-1 rounded hidden">LIMIT</div>
+                    </div>
+                    <div class="p-3 flex flex-col items-center">
+                        <div class="text-[9px] text-slate-500 uppercase font-semibold">Power (kW)</div>
+                        <div id="dispKw" class="text-xl sm:text-2xl font-mono font-bold text-slate-800 mt-1">0.0</div>
+                    </div>
+                    <div class="p-3 flex flex-col items-center">
+                        <div class="text-[9px] text-slate-500 uppercase font-semibold">Current (A)</div>
+                        <div id="dispAmp" class="text-xl sm:text-2xl font-mono font-bold text-slate-800 mt-1">0.0</div>
+                    </div>
+                </div>
+                
+                <button id="btnReset" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 hidden items-center justify-center text-sm transition-all">
+                    ACKNOWLEDGE FAULT F07900
+                </button>
+            </div>
+            
+        </div>
+    </main>
+
+    <script>
+        // UI Bindings
+        const ui = {
+            p0003: document.getElementById('inpP0003'), p0004: document.getElementById('inpP0004'),
+            p0010: document.getElementById('inpP0010'), dynoKw: document.getElementById('inpDynoKw'),
+            p1080: document.getElementById('inpP1080'), p1082: document.getElementById('inpP1082'),
+            p1120: document.getElementById('inpP1120'), p1121: document.getElementById('inpP1121'),
+            p1520: document.getElementById('inpP1520'), p2175: document.getElementById('inpP2175'),
+            inpStaticRes: document.getElementById('inpStaticRes'),
+            
+            advParams: document.getElementById('advParams'), advHiddenMsg: document.getElementById('advHiddenMsg'),
+            filterOverlay: document.getElementById('filterOverlay'),
+            
+            sliderTarget: document.getElementById('sliderTarget'), valTargetRpm: document.getElementById('valTargetRpm'),
+            sliderThrottle: document.getElementById('sliderThrottle'), valThrottle: document.getElementById('valThrottle'),
+            
+            dState: document.getElementById('dispState'), dMsg: document.getElementById('dispMsg'),
+            dRpm: document.getElementById('dispRpm'), dTorque: document.getElementById('dispTorque'),
+            dKw: document.getElementById('dispKw'), dAmp: document.getElementById('dispAmp'),
+            badgeLimit: document.getElementById('badgeLimit'),
+            
+            btnStart: document.getElementById('btnStart'), btnStop: document.getElementById('btnStop'),
+            btnReset: document.getElementById('btnReset'),
+
+            visEngine: document.getElementById('visEngine'), visEngineHeat: document.getElementById('visEngineHeat'),
+            visShaft: document.getElementById('visShaft'), 
+            visDyno: document.getElementById('visDyno'), visLimitWarn: document.getElementById('visLimitWarn'),
+            visDynoLoadMsg: document.getElementById('visDynoLoadMsg'), valStartupLoad: document.getElementById('valStartupLoad')
+        };
+
+        let state = 'READY'; // READY, RUNNING, FAULT
+        let actualRpm = 0;
+        let setpointRpm = 0;
+        let blockedTimer = 0;
+        let startTime = 0;
+        let lastTime = performance.now();
+
+        function checkUIParams() {
+            if (parseInt(ui.p0004.value) !== 0) {
+                ui.filterOverlay.classList.remove('hidden'); ui.filterOverlay.classList.add('flex');
+            } else {
+                ui.filterOverlay.classList.add('hidden'); ui.filterOverlay.classList.remove('flex');
+            }
+            if (parseInt(ui.p0003.value) < 3) {
+                ui.advParams.classList.add('hidden'); ui.advHiddenMsg.classList.remove('hidden');
+            } else {
+                ui.advParams.classList.remove('hidden'); ui.advHiddenMsg.classList.add('hidden');
+            }
+        }
+        ui.p0003.addEventListener('change', checkUIParams);
+        ui.p0004.addEventListener('input', checkUIParams);
+        
+        ui.sliderTarget.addEventListener('input', e => ui.valTargetRpm.innerText = e.target.value);
+        ui.sliderThrottle.addEventListener('input', e => ui.valThrottle.innerText = e.target.value);
+
+        function showMessage(msg, isError = false) {
+            ui.dMsg.innerText = msg;
+            ui.dMsg.classList.remove('hidden');
+            if (isError) ui.dMsg.classList.add('text-red-400');
+            else ui.dMsg.classList.remove('text-red-400');
+        }
+
+        function updateUIState() {
+            if (state === 'READY') {
+                ui.dState.innerText = 'READY'; ui.dState.className = 'text-xl font-bold tracking-wider text-slate-300';
+                showMessage('Waiting for Start.');
+                ui.btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+                ui.btnReset.classList.add('hidden');
+                ui.visDyno.classList.remove('animate-fault', 'border-red-500');
+                ui.visDynoLoadMsg.classList.add('hidden');
+            } else if (state === 'RUNNING') {
+                ui.dState.innerText = 'RUNNING'; ui.dState.className = 'text-xl font-bold tracking-wider text-green-400';
+                showMessage('Inverter active.');
+                ui.btnReset.classList.add('hidden');
+                ui.visDyno.classList.remove('animate-fault', 'border-red-500');
+            } else if (state === 'FAULT') {
+                ui.dState.innerText = 'F07900 FAULT'; ui.dState.className = 'text-xl font-bold tracking-wider text-red-500';
+                showMessage('Motor Blocked!', true);
+                ui.btnStart.classList.add('opacity-50', 'cursor-not-allowed');
+                ui.btnReset.classList.remove('hidden'); ui.btnReset.classList.add('flex');
+                ui.visDyno.classList.add('animate-fault', 'border-red-500');
+                ui.visLimitWarn.classList.add('hidden');
+                ui.visDynoLoadMsg.classList.add('hidden');
+            }
+        }
+
+        ui.btnStart.addEventListener('click', () => {
+            if (state === 'FAULT') return;
+            if (parseInt(ui.p0010.value) !== 0) {
+                ui.dMsg.innerText = "Error: P0010 must be 0.";
+                ui.dMsg.classList.add('text-red-400');
+                setTimeout(() => { ui.dMsg.classList.remove('text-red-400'); updateUIState(); }, 2000);
+                return;
+            }
+            state = 'RUNNING';
+            startTime = performance.now();
+            blockedTimer = 0;
+            updateUIState();
+        });
+
+        ui.btnStop.addEventListener('click', () => {
+            if (state !== 'FAULT') {
+                state = 'READY'; ui.sliderThrottle.value = 0; ui.valThrottle.innerText = 0; updateUIState();
+            }
+        });
+
+        ui.btnReset.addEventListener('click', () => {
+            state = 'READY'; actualRpm = 0; blockedTimer = 0; ui.badgeLimit.classList.add('hidden'); updateUIState();
+        });
+
+        // Simulation Loop
+        function simLoop(time) {
+            let dt = (time - lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1;
+            lastTime = time;
+
+            let p1080 = parseFloat(ui.p1080.value) || 0; let p1082 = parseFloat(ui.p1082.value) || 3000;
+            let p1120 = parseFloat(ui.p1120.value) || 1; let p1121 = parseFloat(ui.p1121.value) || 1;
+            let p1520 = parseFloat(ui.p1520.value) || 0; let p2175 = parseFloat(ui.p2175.value) || 0;
+            let dynoKw = parseFloat(ui.dynoKw.value) || 100;
+            let staticRes = parseFloat(ui.inpStaticRes.value) || 0;
+            let targetUI = parseFloat(ui.sliderTarget.value); let throttle = parseFloat(ui.sliderThrottle.value);
+
+            let isLimit = false; let outputTorque = 0;
+
+            if (state === 'RUNNING') {
+                setpointRpm = Math.max(p1080, Math.min(targetUI, p1082));
+                
+                // Calculate Elapsed Time for Startup Load
+                let elapsedTime = (time - startTime) / 1000;
+                let dynoStartupRes = 0;
+                
+                if (elapsedTime <= 10) {
+                    dynoStartupRes = dynoKw * 5; // e.g. 100kW -> 500Nm
+                    ui.visDynoLoadMsg.classList.remove('hidden');
+                    ui.valStartupLoad.innerText = dynoStartupRes;
+                } else {
+                    ui.visDynoLoadMsg.classList.add('hidden');
+                }
+
+                // Total Load Calculation
+                let engineThrottleTorque = (throttle / 100) * 800; // Throttle adds load in this context based on prompt
+                let totalLoadTorque = staticRes + dynoStartupRes + engineThrottleTorque;
+
+                if (totalLoadTorque > p1520) {
+                    isLimit = true;
+                    outputTorque = p1520;
+                    // Cannot overcome load -> decelerate to 0
+                    actualRpm -= (p1082 / p1121) * dt;
+                } else {
+                    isLimit = false;
+                    outputTorque = totalLoadTorque;
+                    
+                    let speedError = setpointRpm - actualRpm;
+                    if (speedError > 0) {
+                        actualRpm += Math.min(speedError, (p1082 / p1120) * dt);
+                    } else if (speedError < 0) {
+                        actualRpm -= Math.min(-speedError, (p1082 / p1121) * dt);
+                    }
+                }
+                
+                if (actualRpm < 0) actualRpm = 0;
+
+                // Fault Logic (Siemens F07900)
+                if (isLimit && p2175 > 0 && actualRpm < p2175) {
+                    blockedTimer += dt;
+                    if (blockedTimer >= 2.0) { state = 'FAULT'; updateUIState(); }
+                } else {
+                    blockedTimer = 0;
+                }
+            } else {
+                let decel = (p1082 / p1121) * dt; actualRpm -= decel;
+                if (actualRpm < 0) actualRpm = 0;
+                outputTorque = 0; isLimit = false;
+                ui.visDynoLoadMsg.classList.add('hidden');
+            }
+
+            // Displays
+            ui.dRpm.innerText = Math.round(actualRpm);
+            ui.dTorque.innerText = outputTorque.toFixed(1);
+            let powerKw = (outputTorque * actualRpm) / 9550;
+            ui.dKw.innerText = powerKw.toFixed(1);
+            let currentAmp = (powerKw * 1000) / (1.732 * 400 * 0.8) + (actualRpm > 0 ? 5 : 0);
+            if (outputTorque > 0 && actualRpm === 0) currentAmp = (outputTorque * 1.5); // Estimate stall current
+            ui.dAmp.innerText = currentAmp.toFixed(1);
+
+            // Handle Tags
+            if (isLimit && state !== 'FAULT') {
+                ui.badgeLimit.classList.remove('hidden');
+                ui.visLimitWarn.classList.remove('hidden');
+                ui.visDyno.classList.add('shadow-[0_0_20px_rgba(239,68,68,0.5)]', 'border-red-400');
+            } else {
+                ui.badgeLimit.classList.add('hidden');
+                ui.visLimitWarn.classList.add('hidden');
+                if(state !== 'FAULT') ui.visDyno.classList.remove('shadow-[0_0_20px_rgba(239,68,68,0.5)]', 'border-red-400');
+            }
+
+            // Visual Animations
+            if (throttle > 0 && state === 'RUNNING') {
+                ui.visEngine.classList.add('engine-vibrate');
+                ui.visEngineHeat.style.opacity = (throttle / 100) * 0.8; 
+            } else {
+                ui.visEngine.classList.remove('engine-vibrate');
+                ui.visEngineHeat.style.opacity = 0;
+            }
+
+            if (actualRpm > 5) {
+                ui.visShaft.style.animationPlayState = 'running';
+                let duration = Math.max(0.05, 60 / actualRpm);
+                ui.visShaft.style.animationDuration = duration + 's';
+            } else {
+                ui.visShaft.style.animationPlayState = 'paused';
+            }
+
+            requestAnimationFrame(simLoop);
+        }
+
+        checkUIParams(); updateUIState(); requestAnimationFrame(simLoop);
+    </script>
+</body>
+</html>
